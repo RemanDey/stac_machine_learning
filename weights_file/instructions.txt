@@ -1,0 +1,6 @@
+Make sure all the weights are loaded from this folder only.
+
+Expected weights files structure:
+- All weights files (e.g., model.pkl, model.pt) must be placed directly inside this folder.
+- Do NOT create subdirectories inside this folder.
+- When we download the weights from Google Drive, they should be extracted to match this flat structure.
