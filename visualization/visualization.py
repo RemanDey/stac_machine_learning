@@ -11,16 +11,16 @@ sns.set_theme(style="whitegrid")
 plt.figure(figsize=(12, 10))
 
 # 1. Correlation Heatmap
-sns.heatmap(df.corr(), annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
+sns.heatmap(df.corr(method='spearman'), annot=True, cmap='coolwarm', fmt=".2f", linewidths=0.5)
 plt.title('Feature Correlation Matrix')
-plt.savefig('correlation_matrix.png')
+plt.savefig('spearman_correlation_matrix.png')
 plt.close()
 
 # 2. Pairplot colored by the target label to see distributions and separations
 # (Sampling 500 points for speed if the dataset is large)
-sample_df = df.sample(n=min(500, len(df)), random_state=42)
+sample_df = df.sample(n=min(1000, len(df)), random_state=42)
 sns.pairplot(sample_df, hue='label', palette='husl', diag_kind='kde')
 plt.savefig('features_pairplot.png')
 plt.close()
 
-print("Visualizations saved as 'correlation_matrix.png' and 'features_pairplot.png'!")
+print("Visualizations saved as 'spearman_correlation_matrix.png' and 'features_pairplot.png'!")
