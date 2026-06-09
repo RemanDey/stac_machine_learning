@@ -15,7 +15,6 @@ from sklearn.svm import SVC
 
 
 RAW_FEATURES = [
-zzz
     "slope",
     "reflectance",
     "crater_density",
