@@ -15,9 +15,7 @@ from sklearn.svm import SVC
 
 
 RAW_FEATURES = [
-    "solar_zenith",
-    "surface_temp",
-    "elevation",
+zzz
     "slope",
     "reflectance",
     "crater_density",
