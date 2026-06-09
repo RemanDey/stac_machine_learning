@@ -1,5 +1,5 @@
 import os
-
+from lightgbm import LGBMClassifier
 import joblib
 import lunadem
 import numpy as np
@@ -15,6 +15,9 @@ from sklearn.svm import SVC
 
 
 RAW_FEATURES = [
+    "solar_zenith",
+    "surface_temp",
+    "elevation",
     "slope",
     "reflectance",
     "crater_density",
@@ -43,6 +46,11 @@ INSIGHT_FEATURES = [
 ]
 
 FEATURES = RAW_FEATURES + DERIVED_FEATURES + INSIGHT_FEATURES
+FEATURE_GROUPS = {
+    "raw": RAW_FEATURES,
+    "derived": DERIVED_FEATURES,
+    "insight": INSIGHT_FEATURES,
+}
 WEIGHTS_PATH = os.path.join("weights_file", "model.pkl")
 
 
@@ -66,12 +74,34 @@ def add_derived_features(df):
     return enriched
 
 
-def prepare_features(df):
+def apply_feature_weights(X, feature_weights=None):
+    if feature_weights is None:
+        return X
+
+    weights = pd.Series(1.0, index=X.columns)
+
+    # Group weights are applied first, then individual feature weights override them.
+    for key, value in feature_weights.items():
+        if key in FEATURE_GROUPS:
+            for feature in FEATURE_GROUPS[key]:
+                if feature in weights.index:
+                    weights.loc[feature] = float(value)
+
+    for key, value in feature_weights.items():
+        if key in weights.index:
+            weights.loc[key] = float(value)
+
+    return X.mul(weights, axis=1)
+
+
+def prepare_features(df, feature_weights=None):
     enriched = add_derived_features(df)
     missing = [feature for feature in FEATURES if feature not in enriched.columns]
     if missing:
         raise ValueError(f"Missing required feature columns: {', '.join(missing)}")
-    return enriched[FEATURES]
+
+    X = enriched[FEATURES]
+    return apply_feature_weights(X, feature_weights)
 
 
 def build_model():
@@ -79,11 +109,11 @@ def build_model():
         [
             (
                 "quantile",
-                QuantileTransformer(output_distribution="normal", random_state=42),
+                QuantileTransformer(output_distribution="uniform", random_state=42),
             ),
             (
                 "classifier",
-                LogisticRegression(max_iter=5000, C=1.0, random_state=42),
+                LogisticRegression(max_iter=5000, C=50.0, random_state=42),
             ),
         ]
     )
@@ -92,7 +122,7 @@ def build_model():
             ("scaler", StandardScaler()),
             (
                 "spline",
-                SplineTransformer(n_knots=6, degree=3, include_bias=False),
+                SplineTransformer(n_knots=7, degree=5, include_bias=True),
             ),
             (
                 "classifier",
@@ -106,11 +136,15 @@ def build_model():
             (
                 "classifier",
                 MLPClassifier(
-                    hidden_layer_sizes=(64, 32),
-                    alpha=0.01,
-                    max_iter=1000,
+                    hidden_layer_sizes=(256),  # Increased capacity
+                    activation="logistic",  # More complex activation for non-linearity
+                    solver="adam",
+                    alpha=0.001,  # Slightly lower regularization to allow more learning
+                    learning_rate="adaptive",  # Keeps learning efficient
+                    learning_rate_init=0.001,
+                    max_iter=3000,  # Given more time to converge
                     random_state=42,
-                    early_stopping=True,
+                    early_stopping=False,
                 ),
             ),
         ]
@@ -120,11 +154,20 @@ def build_model():
             ("scaler", StandardScaler()),
             (
                 "classifier",
-                SVC(C=3.0, gamma="scale", probability=True, random_state=42),
+                SVC(C=10.0, gamma="scale", probability=True, random_state=42),
             ),
         ]
     )
-    boosted_trees = AdaBoostClassifier(n_estimators=200, random_state=42)
+    lightgbm_model = LGBMClassifier(
+        n_estimators=150,
+        num_leaves=31,
+        max_bin=255,
+        learning_rate=0.05,
+        min_child_samples=20,
+        random_state=42,
+        verbosity=-1,  # Keeps the console clean from training logs
+    )
+    # boosted_trees = AdaBoostClassifier(n_estimators=200, random_state=42)
 
     return VotingClassifier(
         estimators=[
@@ -132,21 +175,40 @@ def build_model():
             ("spline_logistic", spline_logistic),
             ("neural_net", neural_net),
             ("support_vector", support_vector),
-            ("boosted_trees", boosted_trees),
+            # ("boosted_trees", boosted_trees),
+            ("lightgbm", lightgbm_model),
         ],
         voting="soft",
+        n_jobs=-1,
     )
 
 
-def train_model(weights_path=WEIGHTS_PATH):
+def train_model(weights_path=WEIGHTS_PATH, feature_weights=None):
     print("Loading historical LinaDEM data...")
     df = lunadem.get_previously_available_data()
-    X = prepare_features(df)
+    hypothesis_weights = {
+        "insight": 0.001,
+        "solar_zenith": 0.001,
+        "surface_temp": 0.001,
+        "elevation": 0.001,
+        "slope": 10.0,
+        "reflectance": 0.001,
+        "crater_density": 0.001,
+        "sensor_noise_alpha": 0.001,
+        "sensor_noise_beta": 0.001,
+        "mineral_index": 0.001,
+        "thermal_inertia": 10.0,
+        "albedo_ratio": 0.01,
+        "regolith_depth": 10.0,
+    }
+    weights = feature_weights if feature_weights is not None else hypothesis_weights
+    X = prepare_features(df, feature_weights=weights)
     y = df["label"].astype(int)
 
-    X_train, X_valid, y_train, y_valid = train_test_split(
+    X_train, X_valid, y_train, y_valid, raw_train, raw_valid = train_test_split(
         X,
         y,
+        df,
         test_size=0.2,
         random_state=42,
         stratify=y,
@@ -156,11 +218,11 @@ def train_model(weights_path=WEIGHTS_PATH):
     model = build_model()
     model.fit(X_train, y_train)
 
-    valid_probabilities = predict_dataframe(X_valid, model=model)
+    valid_probabilities = predict_dataframe(raw_valid, model=model, feature_weights=weights)
     valid_predictions = (valid_probabilities >= 0.5).astype(int)
     accuracy = accuracy_score(y_valid, valid_predictions)
     roc_auc = roc_auc_score(y_valid, valid_probabilities)
-    reference_labels = _predict_reference_labels(X_valid)
+    reference_labels = _predict_reference_labels(raw_valid)
     reference_accuracy = accuracy_score(reference_labels, valid_predictions)
     reference_roc_auc = roc_auc_score(reference_labels, valid_probabilities)
     matrix = confusion_matrix(y_valid, valid_predictions, labels=[0, 1])
@@ -186,16 +248,18 @@ def load_model(weights_path=WEIGHTS_PATH):
     return joblib.load(weights_path)
 
 
-def predict_dataframe(df, model=None):
+def predict_dataframe(df, model=None, feature_weights=None):
     if model is None:
         model = load_model()
-    X = prepare_features(df)
+    X = prepare_features(df, feature_weights=feature_weights)
     class_index = list(model.classes_).index(1)
     return model.predict_proba(X)[:, class_index]
 
 
-def _predict_reference_labels(X):
+def _predict_reference_labels(df):
+    enriched = add_derived_features(df)
+    required_features = RAW_FEATURES + DERIVED_FEATURES
     return pd.Series(
-        [lunadem.predict_label(X.iloc[index]) for index in range(len(X))],
-        index=X.index,
+        [lunadem.predict_label(enriched.iloc[index][required_features]) for index in range(len(enriched))],
+        index=enriched.index,
     )

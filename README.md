@@ -48,6 +48,8 @@ The final prediction pipeline is shared across training, evaluation, and live in
 
 - `slope` is the most important visible feature because it has a strong negative relationship with the label.
 - The rule `slope > 14 -> label 0` appeared consistently in the historical dataset.
+- `feature beta` is surface_temp/(1+slope)
+- `feature delta` is ln(1+|elevation|)*slope
 - `feature delta` is another important visible feature because we find that it segregates the label into two classes based on its range.
 - The target classes are fairly balanced, so accuracy is meaningful, but ROC-AUC is still better for judging probability ranking.
 - The correlation matrices showed that not every feature has a strong linear relationship with the label, so nonlinear transformations and interactions were useful.

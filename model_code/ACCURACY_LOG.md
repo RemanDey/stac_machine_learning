@@ -1,1 +1,2 @@
 -`basic adaboost tree+svm+MLP`-accuracy:0.9545
+- `setting quantile transformation output_distribution=uniform`-accuracy:0.9550
