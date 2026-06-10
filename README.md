@@ -1,3 +1,8 @@
+<h2>
+CURRENT METRICS:
+<img src="metrics.png" alt="Metrics" width=100%>
+</h2>
+
 
 <h2>Data Visualization: CHECKING THE DATASET</h2>
     acquired the dataset from get_previous_data() funcction from lunadem. and saved it as data.csv
