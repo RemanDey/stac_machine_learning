@@ -2,8 +2,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.feature_selection import mutual_info_regression
 import lunadem
+import numpy as np
 # Load the dataset
-data = pd.read_csv('/home/remandey/my-programs/stac/stac_machine_learning/visualization/data.csv')
+data = pd.read_csv('/home/remandey/my-programs/stac/stac_machine_learning/visualization/data_engineered.csv')
 a=lunadem.extract_feature_alpha(data)
 data['feature_alpha'] = a
 b=lunadem.extract_feature_beta(data)
@@ -29,4 +30,9 @@ for var in variables:
     plt.ylabel('Label')
     plt.title(f'{var.replace("_", " ").title()} vs Label')
     plt.grid(True)
+
+    # plt.savefig(f"{var}vsLabel.png", dpi=1200)
+
+# 3. Display the plot
+
     plt.show()

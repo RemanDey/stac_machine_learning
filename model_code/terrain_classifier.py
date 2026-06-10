@@ -1,18 +1,19 @@
 import os
 from lightgbm import LGBMClassifier
+import xgboost as xgb
 import joblib
 import lunadem
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import AdaBoostClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, confusion_matrix, roc_auc_score
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.neural_network import MLPClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import QuantileTransformer, SplineTransformer, StandardScaler
 from sklearn.svm import SVC
-
+from sklearn.neighbors import KNeighborsClassifier
 
 RAW_FEATURES = [
     "solar_zenith",
@@ -33,12 +34,16 @@ DERIVED_FEATURES = [
 ]
 
 INSIGHT_FEATURES = [
-    "slope_gt_13",
+    "slope_lt_3",
     "slope_gt_14",
+    "thermal_inertia_gt_71",
+    "regolith_depth_gt_93",
     "slope_log",
     "slope_sqrt",
     "slope_sq",
     "slope_margin_13",
+    "slope_margin_14",
+    "slope_margin_10.524",
     "reflectance_log",
     "elevation_abs",
     "slope_x_reflectance",
@@ -61,12 +66,16 @@ def add_derived_features(df):
     enriched["thermal_inertia"] = lunadem.extract_feature_beta(enriched)
     enriched["albedo_ratio"] = lunadem.extract_feature_gamma(enriched)
     enriched["regolith_depth"] = lunadem.extract_feature_delta(enriched)
-    enriched["slope_gt_13"] = (enriched["slope"] > 13).astype(int)
+    enriched["slope_lt_3"] = (enriched["slope"] < 3).astype(int)
     enriched["slope_gt_14"] = (enriched["slope"] > 14).astype(int)
+    enriched["thermal_inertia_gt_71"] = (enriched["thermal_inertia"] > 71).astype(int)
+    enriched["regolith_depth_gt_93"] = (enriched["regolith_depth"] > 93).astype(int)
     enriched["slope_log"] = np.log1p(enriched["slope"])
     enriched["slope_sqrt"] = np.sqrt(enriched["slope"])
     enriched["slope_sq"] = enriched["slope"] ** 2
     enriched["slope_margin_13"] = 13 - enriched["slope"]
+    enriched["slope_margin_14"] = 14 - enriched["slope"]
+    enriched["slope_margin_10.524"] = 10.524 - enriched["slope"]
     enriched["reflectance_log"] = np.log(enriched["reflectance"])
     enriched["elevation_abs"] = enriched["elevation"].abs()
     enriched["slope_x_reflectance"] = enriched["slope"] * enriched["reflectance"]
@@ -136,13 +145,13 @@ def build_model():
             (
                 "classifier",
                 MLPClassifier(
-                    hidden_layer_sizes=(256),  # Increased capacity
+                    hidden_layer_sizes=(256,128,64,32),  # Increased capacity
                     activation="logistic",  # More complex activation for non-linearity
                     solver="adam",
                     alpha=0.001,  # Slightly lower regularization to allow more learning
                     learning_rate="adaptive",  # Keeps learning efficient
                     learning_rate_init=0.001,
-                    max_iter=3000,  # Given more time to converge
+                    max_iter=5000,  # Given more time to converge
                     random_state=42,
                     early_stopping=False,
                 ),
@@ -158,49 +167,109 @@ def build_model():
             ),
         ]
     )
-    lightgbm_model = LGBMClassifier(
-        n_estimators=150,
-        num_leaves=31,
-        max_bin=255,
-        learning_rate=0.05,
-        min_child_samples=20,
-        random_state=42,
-        verbosity=-1,  # Keeps the console clean from training logs
+    lightgbm_model =LGBMClassifier(
+                    n_estimators=150,
+                    num_leaves=31,
+                    max_bin=255,
+                    learning_rate=0.05,
+                    min_child_samples=20,
+                    random_state=42,
+                    verbosity=-1,  # Keeps the console clean from training logs
+                )
+    XGB_model = xgb.XGBClassifier(
+                    n_estimators=150,
+                    max_depth=3,
+                    learning_rate=0.05,
+                    subsample=0.9,
+                    colsample_bytree=0.8,
+                    random_state=42,
+                    use_label_encoder=True,
+                    eval_metric="",
+                )
+    boosted_trees = AdaBoostClassifier(n_estimators=200, random_state=42)
+    knn_classifier = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            (
+                "classifier",
+        KNeighborsClassifier(n_neighbors=41,weights="distance", n_jobs=-1)
+            ),
+        ]
     )
-    # boosted_trees = AdaBoostClassifier(n_estimators=200, random_state=42)
-
     return VotingClassifier(
         estimators=[
             ("quantile_logistic", quantile_logistic),
             ("spline_logistic", spline_logistic),
             ("neural_net", neural_net),
             ("support_vector", support_vector),
-            # ("boosted_trees", boosted_trees),
+            ("boosted_trees", boosted_trees),
             ("lightgbm", lightgbm_model),
+            # ("xgboost", XGB_model),
+            # ("knn", knn_classifier),
         ],
         voting="soft",
+        #weights=[3.0,1.0,3.0,2.0,2.0,1],  # Emphasize the more complex models
         n_jobs=-1,
     )
+
+
+def _print_estimator_metrics(model, X_valid, y_valid):
+    print("Base estimator metrics:")
+    for name, estimator in model.named_estimators_.items():
+        probabilities = None
+        try:
+            probabilities = estimator.predict_proba(X_valid)
+            class_index = list(estimator.classes_).index(1)
+            predictions = (probabilities[:, class_index] >= 0.5).astype(int)
+        except Exception:
+            predictions = estimator.predict(X_valid)
+
+        accuracy = accuracy_score(y_valid, predictions)
+        precision = precision_score(y_valid, predictions, zero_division=0)
+        recall = recall_score(y_valid, predictions, zero_division=0)
+        f1 = f1_score(y_valid, predictions, zero_division=0)
+        roc_auc = None
+        if probabilities is not None:
+            try:
+                roc_auc = roc_auc_score(y_valid, probabilities[:, class_index])
+            except Exception:
+                roc_auc = None
+
+        if roc_auc is not None:
+            print(
+                f"  {name:<20} accuracy: {accuracy:.4f}, precision: {precision:.4f}, "
+                f"recall: {recall:.4f}, f1: {f1:.4f}, roc_auc: {roc_auc:.4f}"
+            )
+        else:
+            print(
+                f"  {name:<20} accuracy: {accuracy:.4f}, precision: {precision:.4f}, "
+                f"recall: {recall:.4f}, f1: {f1:.4f}"
+            )
+    print()
 
 
 def train_model(weights_path=WEIGHTS_PATH, feature_weights=None):
     print("Loading historical LinaDEM data...")
     df = lunadem.get_previously_available_data()
     hypothesis_weights = {
-        "insight": 0.001,
-        "solar_zenith": 0.001,
-        "surface_temp": 0.001,
-        "elevation": 0.001,
-        "slope": 10.0,
-        "reflectance": 0.001,
-        "crater_density": 0.001,
-        "sensor_noise_alpha": 0.001,
-        "sensor_noise_beta": 0.001,
-        "mineral_index": 0.001,
-        "thermal_inertia": 10.0,
-        "albedo_ratio": 0.01,
-        "regolith_depth": 10.0,
+        # "insight": 1000.00,
+        # "solar_zenith": 1000.00,
+        # "surface_temp": 1000.00,
+        # "elevation": 1000.00,
+        # "slope": 0.01,
+        # "reflectance": 1000.00,
+        # "crater_density": 1000.00,
+        # "sensor_noise_alpha": 1000.00,
+        # "sensor_noise_beta": 1000.00,
+        # "mineral_index": 1000.00,
+        # "thermal_inertia": 0.01,
+        # "albedo_ratio": 1000.00,
+        # "regolith_depth": 0.01,
+        # "slope_lt_3": 0.01,
+        # "thermal_inertia_gt_71": 0.01,
+        # "regolith_depth_gt_93": 0.01,
     }
+    
     weights = feature_weights if feature_weights is not None else hypothesis_weights
     X = prepare_features(df, feature_weights=weights)
     y = df["label"].astype(int)
@@ -217,10 +286,14 @@ def train_model(weights_path=WEIGHTS_PATH, feature_weights=None):
     print("Training probability ensemble terrain classifier...")
     model = build_model()
     model.fit(X_train, y_train)
+    _print_estimator_metrics(model, X_valid, y_valid)
 
     valid_probabilities = predict_dataframe(raw_valid, model=model, feature_weights=weights)
     valid_predictions = (valid_probabilities >= 0.5).astype(int)
     accuracy = accuracy_score(y_valid, valid_predictions)
+    precision = precision_score(y_valid, valid_predictions, zero_division=0)
+    recall = recall_score(y_valid, valid_predictions, zero_division=0)
+    f1 = f1_score(y_valid, valid_predictions, zero_division=0)
     roc_auc = roc_auc_score(y_valid, valid_probabilities)
     reference_labels = _predict_reference_labels(raw_valid)
     reference_accuracy = accuracy_score(reference_labels, valid_predictions)
@@ -228,6 +301,9 @@ def train_model(weights_path=WEIGHTS_PATH, feature_weights=None):
     matrix = confusion_matrix(y_valid, valid_predictions, labels=[0, 1])
 
     print(f"Holdout accuracy: {accuracy:.4f}")
+    print(f"Holdout precision: {precision:.4f}")
+    print(f"Holdout recall: {recall:.4f}")
+    print(f"Holdout F1 score: {f1:.4f}")
     print(f"Holdout ROC-AUC: {roc_auc:.4f}")
     print(f"Reference engine accuracy: {reference_accuracy:.4f}")
     print(f"Reference engine ROC-AUC: {reference_roc_auc:.4f}")
@@ -237,6 +313,20 @@ def train_model(weights_path=WEIGHTS_PATH, feature_weights=None):
     print("Retraining on all historical data...")
     final_model = build_model()
     final_model.fit(X, y)
+
+    print("Final model metrics on all historical data:")
+    final_predictions = final_model.predict(X)
+    final_probabilities = final_model.predict_proba(X)[:, list(final_model.classes_).index(1)]
+    final_accuracy = accuracy_score(y, final_predictions)
+    final_precision = precision_score(y, final_predictions, zero_division=0)
+    final_recall = recall_score(y, final_predictions, zero_division=0)
+    final_f1 = f1_score(y, final_predictions, zero_division=0)
+    final_roc_auc = roc_auc_score(y, final_probabilities)
+    print(f"  accuracy: {final_accuracy:.4f}")
+    print(f"  precision: {final_precision:.4f}")
+    print(f"  recall: {final_recall:.4f}")
+    print(f"  f1: {final_f1:.4f}")
+    print(f"  roc_auc: {final_roc_auc:.4f}")
 
     os.makedirs(os.path.dirname(weights_path), exist_ok=True)
     joblib.dump(final_model, weights_path)
@@ -248,12 +338,36 @@ def load_model(weights_path=WEIGHTS_PATH):
     return joblib.load(weights_path)
 
 
+def apply_observation_rules(df, probabilities):
+    """Apply hard boundaries based on historical data observations."""
+    # 1. slope > 14 -> label 0
+    # 2. slope < 3 -> label 1
+    # 3. thermal_inertia > 71 -> label 1
+    # 4. regolith_depth > 93 -> label 0
+    
+    adjusted_probs = np.array(probabilities).copy()
+    
+    # Prioritize Slope rules as the primary terrain constraint if overlaps occur
+    if "thermal_inertia" in df.columns:
+        adjusted_probs = np.where(df["thermal_inertia"] > 71, 1.0, adjusted_probs)
+    if "regolith_depth" in df.columns:
+        adjusted_probs = np.where(df["regolith_depth"] > 93, 0.0, adjusted_probs)
+    if "slope" in df.columns:
+        adjusted_probs = np.where(df["slope"] < 3, 1.0, adjusted_probs)
+        adjusted_probs = np.where(df["slope"] > 14, 0.0, adjusted_probs)
+        
+    return adjusted_probs
+
+
 def predict_dataframe(df, model=None, feature_weights=None):
     if model is None:
         model = load_model()
-    X = prepare_features(df, feature_weights=feature_weights)
+    enriched = add_derived_features(df)
+    X = apply_feature_weights(enriched[FEATURES], feature_weights)
     class_index = list(model.classes_).index(1)
-    return model.predict_proba(X)[:, class_index]
+    base_probs = model.predict_proba(X)[:, class_index]
+    
+    return apply_observation_rules(enriched, base_probs)
 
 
 def _predict_reference_labels(df):
