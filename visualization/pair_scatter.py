@@ -25,7 +25,7 @@ for var in variables:
     mi_score = mutual_info_regression(x.values.reshape(-1, 1), y)
     print(f'Mutual Information between {var} and label: {mi_score[0]:.4f}')
     plt.figure() # Create a new figure for each plot
-    plt.scatter(x, y)
+    plt.scatter(np.sin(x), y)
     plt.xlabel(var.replace('_', ' ').title()) # Format variable name for readability
     plt.ylabel('Label')
     plt.title(f'{var.replace("_", " ").title()} vs Label')

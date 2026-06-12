@@ -48,6 +48,10 @@ INSIGHT_FEATURES = [
     "elevation_abs",
     "slope_x_reflectance",
     "slope_x_crater_density",
+    "slope_x_surface_temp",
+    "sin_crater_density",
+    "sin_surface_temp",
+    "cos_elevation"
 ]
 
 FEATURES = RAW_FEATURES + DERIVED_FEATURES + INSIGHT_FEATURES
@@ -79,7 +83,11 @@ def add_derived_features(df):
     enriched["reflectance_log"] = np.log(enriched["reflectance"])
     enriched["elevation_abs"] = enriched["elevation"].abs()
     enriched["slope_x_reflectance"] = enriched["slope"] * enriched["reflectance"]
-    enriched["slope_x_crater_density"] = enriched["slope"] * enriched["crater_density"]
+    enriched["slope_x_crater_density"] = enriched["slope"] * (enriched["crater_density"])
+    enriched["slope_x_surface_temp"] = enriched["slope"] * np.sin(enriched["surface_temp"])
+    enriched["sin_crater_density"] = np.sin(enriched["crater_density"])
+    enriched["sin_surface_temp"] = np.sin(enriched["surface_temp"])
+    enriched["cos_elevation"] = np.cos(enriched["elevation"])
     return enriched
 
 

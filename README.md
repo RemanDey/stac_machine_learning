@@ -57,6 +57,6 @@ The final prediction pipeline is shared across training, evaluation, and live in
 - `feature delta` is ln(1+|elevation|)*slope
 - `feature delta` is another important visible feature because we find that it segregates the label into two classes based on its range.
 - The target classes are fairly balanced, so accuracy is meaningful, but ROC-AUC is still better for judging probability ranking.
+- doing feature engineering yields more accuracy
 - The correlation matrices showed that not every feature has a strong linear relationship with the label, so nonlinear transformations and interactions were useful.
-- Because ROC-AUC evaluates ranking quality, the final output is the probability of class `1`, not a boolean class label.
 - The model was validated using `lunadem.predict_label()` as the internal reference engine.
