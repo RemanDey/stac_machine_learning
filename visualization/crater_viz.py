@@ -5,7 +5,7 @@ import numpy as np
 data = pd.read_csv('/home/remandey/my-programs/stac/stac_machine_learning/visualization/data.csv')
 # Set up the plotting environment
 sns.set_theme(style="whitegrid")
-x=data['crater_density']
+x=data['sensor_noise_beta']
 x=np.sin(x)  # Apply sine transformation to the crater_density feature
 print(x)
 y=data['label']

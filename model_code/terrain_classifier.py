@@ -54,6 +54,11 @@ INSIGHT_FEATURES = [
     "cos_elevation",
     # "sin_reflectance",
     "sin_sensor_noise_alpha",
+    "sin_thermal_inertia",
+    "sin_sensor_noise_beta",
+    # "sin_regolith_depth",
+    # "sin_mineral_index"
+
 ]
 
 FEATURES = RAW_FEATURES + DERIVED_FEATURES + INSIGHT_FEATURES
@@ -92,6 +97,10 @@ def add_derived_features(df):
     enriched["cos_elevation"] = np.cos(enriched["elevation"])
     # enriched["sin_reflectance"] = np.sin(enriched["reflectance"])**0
     enriched["sin_sensor_noise_alpha"] = np.cos(enriched["sensor_noise_alpha"])
+    enriched["sin_thermal_inertia"] = np.sin(enriched["thermal_inertia"])
+    enriched["sin_sensor_noise_beta"] = np.sin(enriched["sensor_noise_beta"])
+    # enriched["sin_mineral_index"] = np.cos(enriched["mineral_index"])
+    
     return enriched
 
 

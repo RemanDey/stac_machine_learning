@@ -5,7 +5,7 @@ This project implements a high-precision machine learning pipeline for classifyi
 ### Current Metrics
 
 <img src="metrics.png" alt="Metrics" width=100%>
-<p align="center"><i>Final model performance metrics demonstrating 97.63% accuracy and 0.9984 ROC-AUC.</i></p>
+<p align="center"><i>Final model performance metrics demonstrating 97.90% accuracy and 0.99869 ROC-AUC.</i></p>
 
 | Milestone | Accuracy |
 | :--- | :--- |
@@ -13,7 +13,7 @@ This project implements a high-precision machine learning pipeline for classifyi
 | Quantile Transformation (Uniform) | 0.9550 |
 | Advanced Feature Engineering | 0.9731 |
 | Trigonometric Sensor Transformations | 0.9751 |
-| **Final Feature Interaction Set** | **0.9763** |
+| **Final Feature Interaction Set** | **0.9790** |
 
 ## Technical Approach
 
