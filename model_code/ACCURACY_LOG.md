@@ -2,3 +2,4 @@
 - `setting quantile transformation output_distribution=uniform`-accuracy:0.9550
 - `feature engineering`-accuracy:0.9731
 - `adding the features sin of surface temperature and cos of elevation`- accuracy:0.9751
+- `adding more features` - accuracy:0.9763

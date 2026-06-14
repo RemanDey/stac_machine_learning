@@ -51,7 +51,9 @@ INSIGHT_FEATURES = [
     "slope_x_surface_temp",
     "sin_crater_density",
     "sin_surface_temp",
-    "cos_elevation"
+    "cos_elevation",
+    # "sin_reflectance",
+    "sin_sensor_noise_alpha",
 ]
 
 FEATURES = RAW_FEATURES + DERIVED_FEATURES + INSIGHT_FEATURES
@@ -88,6 +90,8 @@ def add_derived_features(df):
     enriched["sin_crater_density"] = np.sin(enriched["crater_density"])
     enriched["sin_surface_temp"] = np.sin(enriched["surface_temp"])
     enriched["cos_elevation"] = np.cos(enriched["elevation"])
+    # enriched["sin_reflectance"] = np.sin(enriched["reflectance"])**0
+    enriched["sin_sensor_noise_alpha"] = np.cos(enriched["sensor_noise_alpha"])
     return enriched
 
 
@@ -245,13 +249,13 @@ def _print_estimator_metrics(model, X_valid, y_valid):
 
         if roc_auc is not None:
             print(
-                f"  {name:<20} accuracy: {accuracy:.4f}, precision: {precision:.4f}, "
-                f"recall: {recall:.4f}, f1: {f1:.4f}, roc_auc: {roc_auc:.4f}"
+                f"  {name:<20} accuracy: {accuracy:.6f}, precision: {precision:.6f}, "
+                f"recall: {recall:.6f}, f1: {f1:.6f}, roc_auc: {roc_auc:.6f}"
             )
         else:
             print(
-                f"  {name:<20} accuracy: {accuracy:.4f}, precision: {precision:.4f}, "
-                f"recall: {recall:.4f}, f1: {f1:.4f}"
+                f"  {name:<20} accuracy: {accuracy:.6f}, precision: {precision:.6f}, "
+                f"recall: {recall:.6f}, f1: {f1:.6f}"
             )
     print()
 
@@ -308,13 +312,13 @@ def train_model(weights_path=WEIGHTS_PATH, feature_weights=None):
     reference_roc_auc = roc_auc_score(reference_labels, valid_probabilities)
     matrix = confusion_matrix(y_valid, valid_predictions, labels=[0, 1])
 
-    print(f"Holdout accuracy: {accuracy:.4f}")
-    print(f"Holdout precision: {precision:.4f}")
-    print(f"Holdout recall: {recall:.4f}")
-    print(f"Holdout F1 score: {f1:.4f}")
-    print(f"Holdout ROC-AUC: {roc_auc:.4f}")
-    print(f"Reference engine accuracy: {reference_accuracy:.4f}")
-    print(f"Reference engine ROC-AUC: {reference_roc_auc:.4f}")
+    print(f"Holdout accuracy: {accuracy:.6f}")
+    print(f"Holdout precision: {precision:.6f}")
+    print(f"Holdout recall: {recall:.6f}")
+    print(f"Holdout F1 score: {f1:.6f}")
+    print(f"Holdout ROC-AUC: {roc_auc:.6f}")
+    print(f"Reference engine accuracy: {reference_accuracy:.6f}")
+    print(f"Reference engine ROC-AUC: {reference_roc_auc:.6f}")
     print("Confusion matrix [[tn, fp], [fn, tp]]:")
     print(matrix)
 
@@ -330,11 +334,11 @@ def train_model(weights_path=WEIGHTS_PATH, feature_weights=None):
     final_recall = recall_score(y, final_predictions, zero_division=0)
     final_f1 = f1_score(y, final_predictions, zero_division=0)
     final_roc_auc = roc_auc_score(y, final_probabilities)
-    print(f"  accuracy: {final_accuracy:.4f}")
-    print(f"  precision: {final_precision:.4f}")
-    print(f"  recall: {final_recall:.4f}")
-    print(f"  f1: {final_f1:.4f}")
-    print(f"  roc_auc: {final_roc_auc:.4f}")
+    print(f"  accuracy: {final_accuracy:.6f}")
+    print(f"  precision: {final_precision:.6f}")
+    print(f"  recall: {final_recall:.6f}")
+    print(f"  f1: {final_f1:.6f}")
+    print(f"  roc_auc: {final_roc_auc:.6f}")
 
     os.makedirs(os.path.dirname(weights_path), exist_ok=True)
     joblib.dump(final_model, weights_path)
