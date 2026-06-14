@@ -1,62 +1,112 @@
-<h2>
-CURRENT METRICS:
+# Lunar Terrain Classification: LinaDEM ML Classifier
+
+This project implements a high-precision machine learning pipeline for classifying lunar terrain types using sensor data. By combining traditional geological heuristics with a sophisticated ensemble of non-linear classifiers, the model achieves over 97% accuracy.
+
+### Current Metrics
+
 <img src="metrics.png" alt="Metrics" width=100%>
-</h2>
+<p align="center"><i>Final model performance metrics demonstrating 97.63% accuracy and 0.9984 ROC-AUC.</i></p>
 
+| Milestone | Accuracy |
+| :--- | :--- |
+| Basic AdaBoost + SVM + MLP | 0.9545 |
+| Quantile Transformation (Uniform) | 0.9550 |
+| Advanced Feature Engineering | 0.9731 |
+| Trigonometric Sensor Transformations | 0.9751 |
+| **Final Feature Interaction Set** | **0.9763** |
 
-<h2>Data Visualization: CHECKING THE DATASET</h2>
-    acquired the dataset from get_previous_data() funcction from lunadem. and saved it as data.csv
+## Technical Approach
 
-    got the following plots in data: 
-<!-- Resize an image -->
-<p align="center">
-Pearson Correlation Matrix
-<img src="visualization/pearson_correlation_matrix.png" alt="Corrrelation Matrix" width=100%>
-</p>
-<p align="center">
-<!-- Center an image -->
-Kendall Correlation Matrix
-  <img src="visualization/kendall_correlation_matrix.png" alt="Corrrelation Matrix" width=100%>
-</p>
+### 1. Data Processing & Feature Engineering
+The pipeline transforms 8 raw sensor variables into a high-dimensional feature set designed to expose non-linear relationships.
 
-</p>
-<p align="center">
-<!-- Center an image -->
-Spearman Correlation Matrix
-  <img src="visualization/spearman_correlation_matrix.png" alt="pairplot" width=100%>
-</p>
-<p align="center">
+*   **Raw Sensors:** `solar_zenith`, `surface_temp`, `elevation`, `slope`, `reflectance`, `crater_density`, `sensor_noise_alpha/beta`.
+*   **LinaDEM Derived Features:**
+    *   `mineral_index` (Alpha), `thermal_inertia` (Beta), `albedo_ratio` (Gamma), `regolith_depth` (Delta).
+*   **Insight Engineering:**
+    *   **Geometric Interaction:** `slope_x_reflectance`, `slope_x_crater_density`.
+    *   **Non-linear Mapping:** `sin_surface_temp`, `cos_elevation`, `sin_sensor_noise_alpha`.
+    *   **Margin Analysis:** `slope_margin_13`, `slope_margin_14` to capture decision boundary proximity.
+    *   **Logarithmic Scaling:** Applied to `slope` and `reflectance` to normalize right-skewed distributions.
 
-<!-- Center an image -->
-Features Pairplot
-  <img src="visualization/features_pairplot.png" alt="pairplot" width=100%>
-</p>
-# Task 3: Lunar Terrain Classification
+### 2. Model Architecture: Soft-Voting Ensemble
+To maximize ROC-AUC and stability, a `VotingClassifier` combines diverse architectural approaches:
 
-Please mention your approaches and observations about the data below:
+| Estimator | Transformation | Purpose |
+| :--- | :--- | :--- |
+| **Quantile Logistic** | `QuantileTransformer` | Maps features to uniform distribution for linear stability. |
+| **Spline Logistic** | `SplineTransformer` | Captures local non-linearities via polynomial splines. |
+| **Deep MLP** | `StandardScaler` | (256, 128, 64, 32) layers with logistic activation for complex patterns. |
+| **SVC** | RBF Kernel | High-dimensional margin maximization. |
+| **AdaBoost** | Decision Trees | Sequential error correction. |
+| **LightGBM** | Gradient Boosting | Captures complex splits and handles feature interactions efficiently. |
 
-## Approaches
+### 3. Post-Processing: Domain Rules
+After model inference, "Hard Boundaries" derived from historical observations are applied to ensure 100% adherence to known lunar constraints:
+*   `slope > 14` $\rightarrow$ Label 0
+*   `slope < 3` $\rightarrow$ Label 1
+*   `thermal_inertia > 71` $\rightarrow$ Label 1
+*   `regolith_depth > 93` $\rightarrow$ Label 0
 
-I first collected the historical lunar terrain data using `lunadem.get_previously_available_data()`. This gave the 8 raw sensor variables: `solar_zenith`, `surface_temp`, `elevation`, `slope`, `reflectance`, `crater_density`, `sensor_noise_alpha`, and `sensor_noise_beta`. After that I used the 4 LinaDEM feature extraction functions to add `mineral_index`, `thermal_inertia`, `albedo_ratio`, and `regolith_depth`, so the model was trained on the required 12-feature dataset.
+## Visual Analysis
 
-After exploring the visualizations and correlation matrices, I did not treat all variables in the same way. Some variables had almost uniform distributions, such as `surface_temp`, `solar_zenith`, and `sensor_noise_beta`. `slope` looked closer to an exponential distribution. `elevation` and `reflectance` were right-skewed, while `crater_density` and `sensor_noise_alpha` looked closer to normal distributions. Based on this, I added extra transformed features such as `slope_log`, `slope_sqrt`, `slope_sq`, `reflectance_log`, and `elevation_abs`.
+Statistical analysis of the lunar sensor data was conducted to identify feature redundancies and non-linear interaction opportunities.
 
-The strongest relationship I found was between `slope` and the terrain label. The Spearman correlation between `slope` and `label` was around `-0.85`, showing a strong monotonic negative relation. From the `slope_label.py` plot, I also observed that when `slope > 14`, the label was always `0` in the historical data. To make this relationship easier for the model to learn, I added threshold and margin features such as `slope_gt_13`, `slope_gt_14`, and `slope_margin_13`.
+### Correlation Analysis
 
-I also added interaction features involving slope, because slope appeared to control a large part of the decision boundary. For example, I added `slope_x_reflectance` and `slope_x_crater_density` so the model could learn combined effects instead of only independent feature effects.
+<table border="0">
+  <tr>
+    <td><img src="visualization/pearson_correlation_matrix.png" width="100%" /><br><p align="center"><b>Pearson Correlation</b><br>(Linear Relationships)</p></td>
+    <td><img src="visualization/spearman_correlation_matrix.png" width="100%" /><br><p align="center"><b>Spearman Correlation</b><br>(Rank/Monotonicity)</p></td>
+    <td><img src="visualization/kendall_correlation_matrix.png" width="100%" /><br><p align="center"><b>Kendall Correlation</b><br>(Ordinal Association)</p></td>
+  </tr>
+  <tr>
+    <td colspan="3"><img src="visualization/features_pairplot.png" width="100%" /><br><p align="center"><b>Multi-Feature Pairplot</b><br>Overview of feature distributions and class separation boundaries.</p></td>
+  </tr>
+</table>
 
-For the model, I used a soft-voting probability ensemble instead of a single hard classifier. Since the final metric uses ROC-AUC, the model should output probabilities rather than only `0` or `1` labels. The ensemble combines quantile-transformed logistic regression, spline logistic regression, a small neural network, an SVC probability model, and AdaBoost. This improved validation ROC-AUC and accuracy compared with the earlier AdaBoost-only approach.
+### Individual Sensor Feature Distributions
 
-The final prediction pipeline is shared across training, evaluation, and live inference. `train.py` trains the model and saves it to `weights_file/model.pkl`, `evaluate.py` reads a CSV and writes probability predictions, and `test.py` runs the same model on live data from `lunadem.get_current_data()`.
+Feature-level analysis showing class separation for each raw sensor variable:
 
-## Observations
+<table border="0">
+  <tr>
+    <td><img src="visualization/scatter_plots/solar_zenith_vs_label.png" width="100%" /><br><p align="center"><b>Solar Zenith</b></p></td>
+    <td><img src="visualization/scatter_plots/surface_temp_vs_label.png" width="100%" /><br><p align="center"><b>Surface Temperature</b></p></td>
+    <td><img src="visualization/scatter_plots/elevation_vs_label.png" width="100%" /><br><p align="center"><b>Elevation</b></p></td>
+    <td><img src="visualization/scatter_plots/slope_vs_label.png" width="100%" /><br><p align="center"><b>Slope</b></p></td>
+  </tr>
+  <tr>
+    <td><img src="visualization/scatter_plots/reflectance_vs_label.png" width="100%" /><br><p align="center"><b>Reflectance</b></p></td>
+    <td><img src="visualization/scatter_plots/crater_density_vs_label.png" width="100%" /><br><p align="center"><b>Crater Density</b></p></td>
+    <td><img src="visualization/scatter_plots/sensor_noise_alpha_vs_label.png" width="100%" /><br><p align="center"><b>Sensor Noise (Alpha)</b></p></td>
+    <td><img src="visualization/scatter_plots/sensor_noise_beta_vs_label.png" width="100%" /><br><p align="center"><b>Sensor Noise (Beta)</b></p></td>
+  </tr>
+</table>
 
-- `slope` is the most important visible feature because it has a strong negative relationship with the label.
-- The rule `slope > 14 -> label 0` appeared consistently in the historical dataset.
-- `feature beta` is surface_temp/(1+slope)
-- `feature delta` is ln(1+|elevation|)*slope
-- `feature delta` is another important visible feature because we find that it segregates the label into two classes based on its range.
-- The target classes are fairly balanced, so accuracy is meaningful, but ROC-AUC is still better for judging probability ranking.
-- doing feature engineering yields more accuracy
-- The correlation matrices showed that not every feature has a strong linear relationship with the label, so nonlinear transformations and interactions were useful.
-- The model was validated using `lunadem.predict_label()` as the internal reference engine.
+## Project Structure
+
+*   `model_code/terrain_classifier.py`: The core engine containing the feature pipeline and `VotingClassifier` logic.
+*   `visualization/`: Scripts for generating correlation matrices and scatter plots.
+*   `weights_file/model.pkl`: The serialized final ensemble model.
+*   `ACCURACY_LOG.md`: Chronological log of performance improvements.
+
+## Usage
+
+### Training
+To retrain the ensemble on the latest historical data:
+```python
+from model_code.terrain_classifier import train_model
+model = train_model()
+```
+
+### Inference
+To generate probabilities for new sensor data:
+```python
+from model_code.terrain_classifier import predict_dataframe, load_model
+import pandas as pd
+
+df = pd.read_csv("new_sensor_readings.csv")
+model = load_model()
+probs = predict_dataframe(df, model=model)
+```
